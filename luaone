@@ -1,6 +1,5 @@
--- Parameter (dikurangi untuk stabilitas)
-local THREADS = 300  -- Kurangi dari 600
-local BATCH_SIZE = 5 -- Kirim beberapa request sekaligus
+-- Parameter
+local THREADS = 9999
 
 local RS   = game:GetService("ReplicatedStorage")
 local Reqs = RS.TrainEquipment.Remote
@@ -14,43 +13,26 @@ local Speed        = Sys.TrainSpeedHasChanged
 local config = {
     TrainSpeed = math.huge,
     bdelay = 0,
-    threads = {},
-    lastExec = {}
+    threads = {}
 }
 
--- Equip sekali saja
-task.spawn(function()
+-- einmalige Ausrüstung (prüfen: Typ!)
+do
     local ok, err = pcall(function()
-        EquipStation:InvokeServer("2008")
+        EquipStation:InvokeServer("2008") -- wenn Zahl erwartet
     end)
     if not ok then warn("EquipStation failed:", err) end
-end)
+end
 
--- Optimasi: Batch processing dengan throttling
 local function tickPack()
-    local now = tick()
-    
-    -- Throttling per 0.01 detik untuk menghindari spam
-    if config.lastExec.stationary and (now - config.lastExec.stationary) < 0.01 then
-        return
-    end
-    
     local ok, err = pcall(function()
-        -- Gunakan spawn untuk non-blocking calls
-        task.spawn(function()
-            Stationary:InvokeServer()
-        end)
+        local r1 = Stationary:InvokeServer()
         
-        task.spawn(function()
-            Mobile:InvokeServer()
-        end)
+        local r2 = Mobile:InvokeServer()
         
-        -- FireServer lebih cepat karena tidak menunggu response
-        Speed:FireServer(config.TrainSpeed)
+        Speed:FireServer(config.TrainSpeed) -- Zahl testen!
+        
     end)
-    
-    config.lastExec.stationary = now
-    
     if not ok then
         warn("tickPack error:", err)
     end
@@ -59,46 +41,41 @@ end
 local function stopAllThreads()
     running = false
     for _, thread in pairs(config.threads) do
-        task.cancel(thread)
+        coroutine.close(thread)
     end
     config.threads = {}
 end
+
 
 local function startAll()
     stopAllThreads()
     if running then return end
     running = true
 
-    -- Gunakan task.spawn daripada coroutine untuk performa lebih baik
     for i = 1, THREADS do
-        local thread = task.spawn(function()
+        local thread = coroutine.create(function()
             while running do
                 tickPack()
-                
-                -- Yield setiap beberapa iterasi untuk mengurangi load
-                if i % BATCH_SIZE == 0 then
-                    task.wait()
-                end
+                task.wait(config.bdelay)
             end
         end)
         table.insert(config.threads, thread)
+        coroutine.resume(thread)
     end
 end
 
--- Hotkey F untuk stop
+
+
+-- Hotkey F
 game:GetService("UserInputService").InputBegan:Connect(function(inp, gp)
     if gp then return end
     if inp.KeyCode == Enum.KeyCode.F then
         if running then
             stopAllThreads()
-            print("Training stopped")
-        else
-            startAll()
-            print("Training started")
         end
+
     end
 end)
 
--- Auto-start
+-- auto-start (wenn gewünscht)
 startAll()
-print("Training script loaded - Press F to toggle")
