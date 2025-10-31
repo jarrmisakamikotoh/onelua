@@ -44,7 +44,7 @@ local config = {
     TrainSpeed = TrainSpeed,
     bdelay = 0,
     threads = {},
-    autoAdjust = true  -- Toggle auto-adjust
+    autoAdjust = false  -- Toggle auto-adjust
 }
 
 print(string.format("🚄 Auto-Scale: THREADS=%d, TrainSpeed=%s", THREADS, tostring(TrainSpeed)))
