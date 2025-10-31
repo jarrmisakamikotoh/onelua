@@ -1,463 +1,81 @@
--- Extreme Training Value Accumulator v3 (STAT INJECTION)
--- Delta Compatible | Accumulates to actual stat values
+-- Parameter
+local THREADS = 200
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
+local RS   = game:GetService("ReplicatedStorage")
+local Reqs = RS.TrainEquipment.Remote
+local Sys  = RS.TrainSystem.Remote
 
--- GUI Setup
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local Title = Instance.new("TextLabel")
-local MultiplierLabel = Instance.new("TextLabel")
-local MultiplierInput = Instance.new("TextBox")
-local TrainTypeLabel = Instance.new("TextLabel")
-local TrainTypeInput = Instance.new("TextBox")
-local StartButton = Instance.new("TextButton")
-local StopButton = Instance.new("TextButton")
-local StatusLabel = Instance.new("TextLabel")
-local InfoLabel = Instance.new("TextLabel")
-local MinimizeButton = Instance.new("TextButton")
-local CloseButton = Instance.new("TextButton")
-local ContentFrame = Instance.new("Frame")
+local EquipStation = Reqs.ApplyTakeUpStationaryTrainEquipment  
+local Stationary   = Reqs.ApplyStationaryTrain                  
+local Mobile       = Reqs.ApplyMobileTrain                      
+local Speed        = Sys.TrainSpeedHasChanged  
 
--- GUI Properties
-ScreenGui.Name = "ExtremeTrainingGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local config = {
+    TrainSpeed = math.huge,
+    bdelay = 0,
+    threads = {}
+}
 
--- Main Frame
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.35, 0, 0.25, 0)
-MainFrame.Size = UDim2.new(0, 420, 0, 420)
-MainFrame.Active = true
-MainFrame.Draggable = true
+-- einmalige Ausrüstung (prüfen: Typ!)
+do
+    local ok, err = pcall(function()
+        EquipStation:InvokeServer("2008") -- wenn Zahl erwartet
+    end)
+    if not ok then warn("EquipStation failed:", err) end
+end
 
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 12)
-UICorner.Parent = MainFrame
-
--- Title Bar
-Title.Name = "Title"
-Title.Parent = MainFrame
-Title.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-Title.BorderSizePixel = 0
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.Font = Enum.Font.GothamBold
-Title.Text = "🔥 Stat Accumulator V3"
-Title.TextColor3 = Color3.fromRGB(255, 215, 0)
-Title.TextSize = 18
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 12)
-TitleCorner.Parent = Title
-
--- Minimize Button
-MinimizeButton.Name = "MinimizeButton"
-MinimizeButton.Parent = MainFrame
-MinimizeButton.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Position = UDim2.new(1, -70, 0, 5)
-MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
-MinimizeButton.Font = Enum.Font.GothamBold
-MinimizeButton.Text = "_"
-MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 20
-
-local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(0, 8)
-MinCorner.Parent = MinimizeButton
-
--- Close Button
-CloseButton.Name = "CloseButton"
-CloseButton.Parent = MainFrame
-CloseButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-CloseButton.BorderSizePixel = 0
-CloseButton.Position = UDim2.new(1, -35, 0, 5)
-CloseButton.Size = UDim2.new(0, 30, 0, 30)
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.Text = "X"
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.TextSize = 18
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 8)
-CloseCorner.Parent = CloseButton
-
--- Content Frame
-ContentFrame.Name = "ContentFrame"
-ContentFrame.Parent = MainFrame
-ContentFrame.BackgroundTransparency = 1
-ContentFrame.Position = UDim2.new(0, 0, 0, 50)
-ContentFrame.Size = UDim2.new(1, 0, 1, -50)
-
--- Multiplier Label
-MultiplierLabel.Name = "MultiplierLabel"
-MultiplierLabel.Parent = ContentFrame
-MultiplierLabel.BackgroundTransparency = 1
-MultiplierLabel.Position = UDim2.new(0.05, 0, 0.02, 0)
-MultiplierLabel.Size = UDim2.new(0.9, 0, 0, 25)
-MultiplierLabel.Font = Enum.Font.Gotham
-MultiplierLabel.Text = "Training Gain Per Second:"
-MultiplierLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-MultiplierLabel.TextSize = 14
-MultiplierLabel.TextXAlignment = Enum.TextXAlignment.Left
-
--- Multiplier Input
-MultiplierInput.Name = "MultiplierInput"
-MultiplierInput.Parent = ContentFrame
-MultiplierInput.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-MultiplierInput.BorderSizePixel = 0
-MultiplierInput.Position = UDim2.new(0.05, 0, 0.1, 0)
-MultiplierInput.Size = UDim2.new(0.9, 0, 0, 35)
-MultiplierInput.Font = Enum.Font.GothamBold
-MultiplierInput.PlaceholderText = "e.g., 1000000000000 (1 Trillion/sec)"
-MultiplierInput.Text = "1000000000000"
-MultiplierInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-MultiplierInput.TextSize = 14
-
-local InputCorner = Instance.new("UICorner")
-InputCorner.CornerRadius = UDim.new(0, 8)
-InputCorner.Parent = MultiplierInput
-
--- Train Type Label
-TrainTypeLabel.Name = "TrainTypeLabel"
-TrainTypeLabel.Parent = ContentFrame
-TrainTypeLabel.BackgroundTransparency = 1
-TrainTypeLabel.Position = UDim2.new(0.05, 0, 0.22, 0)
-TrainTypeLabel.Size = UDim2.new(0.9, 0, 0, 25)
-TrainTypeLabel.Font = Enum.Font.Gotham
-TrainTypeLabel.Text = "Train Type (1=Strength, 2=Agility, 3=Defense, 4=Stamina):"
-TrainTypeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-TrainTypeLabel.TextSize = 12
-TrainTypeLabel.TextXAlignment = Enum.TextXAlignment.Left
-TrainTypeLabel.TextWrapped = true
-
--- Train Type Input
-TrainTypeInput.Name = "TrainTypeInput"
-TrainTypeInput.Parent = ContentFrame
-TrainTypeInput.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-TrainTypeInput.BorderSizePixel = 0
-TrainTypeInput.Position = UDim2.new(0.05, 0, 0.32, 0)
-TrainTypeInput.Size = UDim2.new(0.9, 0, 0, 35)
-TrainTypeInput.Font = Enum.Font.GothamBold
-TrainTypeInput.PlaceholderText = "Enter 1, 2, 3, or 4"
-TrainTypeInput.Text = "1"
-TrainTypeInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-TrainTypeInput.TextSize = 14
-
-local TypeCorner = Instance.new("UICorner")
-TypeCorner.CornerRadius = UDim.new(0, 8)
-TypeCorner.Parent = TrainTypeInput
-
--- Info Label
-InfoLabel.Name = "InfoLabel"
-InfoLabel.Parent = ContentFrame
-InfoLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-InfoLabel.BorderSizePixel = 0
-InfoLabel.Position = UDim2.new(0.05, 0, 0.45, 0)
-InfoLabel.Size = UDim2.new(0.9, 0, 0, 60)
-InfoLabel.Font = Enum.Font.Gotham
-InfoLabel.Text = "💡 How it works:\n1. Start training Arms/Legs/etc in-game\n2. Click START - values accumulate to stat\n3. Combat Power increases automatically!"
-InfoLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
-InfoLabel.TextSize = 11
-InfoLabel.TextWrapped = true
-
-local InfoCorner = Instance.new("UICorner")
-InfoCorner.CornerRadius = UDim.new(0, 8)
-InfoCorner.Parent = InfoLabel
-
--- Start Button
-StartButton.Name = "StartButton"
-StartButton.Parent = ContentFrame
-StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
-StartButton.BorderSizePixel = 0
-StartButton.Position = UDim2.new(0.05, 0, 0.65, 0)
-StartButton.Size = UDim2.new(0.42, 0, 0, 45)
-StartButton.Font = Enum.Font.GothamBold
-StartButton.Text = "▶ START"
-StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-StartButton.TextSize = 15
-
-local StartCorner = Instance.new("UICorner")
-StartCorner.CornerRadius = UDim.new(0, 10)
-StartCorner.Parent = StartButton
-
--- Stop Button
-StopButton.Name = "StopButton"
-StopButton.Parent = ContentFrame
-StopButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-StopButton.BorderSizePixel = 0
-StopButton.Position = UDim2.new(0.53, 0, 0.65, 0)
-StopButton.Size = UDim2.new(0.42, 0, 0, 45)
-StopButton.Font = Enum.Font.GothamBold
-StopButton.Text = "■ STOP"
-StopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-StopButton.TextSize = 15
-
-local StopCorner = Instance.new("UICorner")
-StopCorner.CornerRadius = UDim.new(0, 10)
-StopCorner.Parent = StopButton
-
--- Status Label
-StatusLabel.Name = "StatusLabel"
-StatusLabel.Parent = ContentFrame
-StatusLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
-StatusLabel.BorderSizePixel = 0
-StatusLabel.Position = UDim2.new(0.05, 0, 0.82, 0)
-StatusLabel.Size = UDim2.new(0.9, 0, 0, 55)
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.Text = "Status: Ready\nWaiting to start..."
-StatusLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
-StatusLabel.TextSize = 12
-StatusLabel.TextWrapped = true
-
-local StatusCorner = Instance.new("UICorner")
-StatusCorner.CornerRadius = UDim.new(0, 8)
-StatusCorner.Parent = StatusLabel
-
--- Variables
-local isRunning = false
-local connections = {}
-local accumulatedValue = 0
-
--- Functions
-local function formatNumber(num)
-    local suffixes = {"", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc", "Ud", "Dd", "Td"}
-    local tier = math.floor(math.log10(math.abs(num) + 1) / 3)
-    
-    if tier <= 0 then
-        return tostring(math.floor(num))
+local function tickPack()
+    local ok, err = pcall(function()
+        local r1 = Stationary:InvokeServer()
+        print("Stationary OK", r1)
+        local r2 = Mobile:InvokeServer()
+        print("Mobile OK", r2)
+        Speed:FireServer(config.TrainSpeed) -- Zahl testen!
+        print("Speed fired")
+    end)
+    if not ok then
+        warn("tickPack error:", err)
     end
-    
-    local suffix = suffixes[math.min(tier + 1, #suffixes)] or "De"
-    local scale = math.pow(10, tier * 3)
-    local scaled = num / scale
-    
-    return string.format("%.2f%s", scaled, suffix)
 end
 
-local function injectStatValue()
-    if not isRunning then return end
-    
-    local multiplier = tonumber(MultiplierInput.Text) or 1000000000000
-    local trainType = tonumber(TrainTypeInput.Text) or 1
-    trainType = math.clamp(trainType, 1, 4)
-    
-    pcall(function()
-        -- Accumulate value over time
-        local gainPerTick = multiplier / 60 -- Divide by 60 for per-frame gain
-        accumulatedValue = accumulatedValue + gainPerTick
-        
-        -- Method 1: Inject to StatisticsDataHasChanged (from your reference)
-        local StatisticsDataHasChanged = ReplicatedStorage.Statistics.Remote.StatisticsDataHasChanged
-        firesignal(StatisticsDataHasChanged.OnClientEvent, 
-            math.floor(accumulatedValue),
-            trainType
-        )
-        
-        -- Method 2: Inject to PlayerTrainValueHasChanged with accumulated value
-        local PlayerTrainValueHasChanged = ReplicatedStorage.TrainSystem.Bindable.PlayerTrainValueHasChanged
-        PlayerTrainValueHasChanged:Fire(
-            LocalPlayer,
-            trainType,
-            math.floor(accumulatedValue),
-            math.floor(accumulatedValue - gainPerTick)
-        )
-        
-        -- Method 3: Force Combat Power recalculation
-        local PlayerCombatPowerHasChanged = ReplicatedStorage.TrainSystem.Bindable.PlayerCombatPowerHasChanged
-        local newCombatPower = math.floor(accumulatedValue * 10) -- Combat power is ~10x stat value
-        PlayerCombatPowerHasChanged:Fire(
-            LocalPlayer,
-            newCombatPower
-        )
-    end)
-end
-
-local function updateDisplay()
-    if not isRunning then return end
-    
-    pcall(function()
-        local trainTypeName = {"Strength", "Agility", "Defense", "Stamina"}
-        local trainType = tonumber(TrainTypeInput.Text) or 1
-        trainType = math.clamp(trainType, 1, 4)
-        
-        local combatPower = math.floor(accumulatedValue * 10)
-        
-        StatusLabel.Text = string.format(
-            "Status: ACCUMULATING! 🔥\n%s: %s\nCombat Power: %s",
-            trainTypeName[trainType],
-            formatNumber(accumulatedValue),
-            formatNumber(combatPower)
-        )
-        StatusLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
-    end)
-end
-
-local function startTraining()
-    if isRunning then return end
-    
-    local multiplier = tonumber(MultiplierInput.Text)
-    local trainType = tonumber(TrainTypeInput.Text)
-    
-    if not multiplier or multiplier < 1 then
-        StatusLabel.Text = "Error: Invalid multiplier!\nMust be number ≥ 1"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        return
+local function stopAllThreads()
+    running = false
+    for _, thread in pairs(config.threads) do
+        coroutine.close(thread)
     end
-    
-    if not trainType or trainType < 1 or trainType > 4 then
-        StatusLabel.Text = "Error: Train type must be 1-4!"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        return
-    end
-    
-    isRunning = true
-    accumulatedValue = 0 -- Reset accumulator
-    StartButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-    
-    local trainTypeName = {"Strength", "Agility", "Defense", "Stamina"}
-    StatusLabel.Text = string.format(
-        "Status: Starting...\nTarget: %s\nGain/sec: %s",
-        trainTypeName[trainType],
-        formatNumber(multiplier)
-    )
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-    
-    -- Apply buff items first
-    task.spawn(function()
-        local buffItems = {18, 19, 20, 21}
-        for _, itemId in ipairs(buffItems) do
-            pcall(function()
-                local TryOperatingItem = ReplicatedStorage.PlayerItemBackpack.Remote.TryOperatingItemByPlayer
-                TryOperatingItem:InvokeServer(
-                    {
-                        GridInfo = {Id = itemId, Num = 1},
-                        GridIndex = "401"
-                    },
-                    itemId,
-                    1,
-                    {Operation = "UseItem", PointingOperation = "UseSingleBuffConsum"}
-                )
-            end)
-            task.wait(0.1)
-        end
-    end)
-    
-    task.wait(0.5)
-    
-    -- Main stat injection loop (runs every frame)
-    local injectionConnection = game:GetService("RunService").Heartbeat:Connect(function()
-        if isRunning then
-            injectStatValue()
-        end
-    end)
-    table.insert(connections, injectionConnection)
-    
-    -- Display updater (runs every 0.5 seconds)
-    local displayConnection = game:GetService("RunService").Heartbeat:Connect(function()
-        if isRunning then
-            updateDisplay()
-        end
-    end)
-    table.insert(connections, displayConnection)
-    
-    -- Server sync every 1 second
-    local syncConnection
-    syncConnection = task.spawn(function()
-        while isRunning do
-            pcall(function()
-                -- Send accumulated value to server via Remote
-                local ApplyStationaryTrain = ReplicatedStorage.TrainEquipment.Remote.ApplyStationaryTrain
-                ApplyStationaryTrain:InvokeServer()
-            end)
-            task.wait(1)
-        end
-    end)
-    
-    StatusLabel.Text = string.format(
-        "Status: ACTIVE ✓\n%s accumulating!\nWatch Combat Power rise!",
-        trainTypeName[trainType]
-    )
+    config.threads = {}
 end
 
-local function stopTraining()
-    isRunning = false
-    
-    for _, connection in ipairs(connections) do
-        if connection and connection.Disconnect then
-            connection:Disconnect()
-        end
+
+local function startAll()
+    stopAllThreads()
+    if running then return end
+    running = true
+
+    for i = 1, THREADS do
+        local thread = coroutine.create(function()
+            while running do
+                tickPack()
+                task.wait(config.bdelay)
+            end
+        end)
+        table.insert(config.threads, thread)
+        coroutine.resume(thread)
     end
-    connections = {}
-    
-    StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
-    
-    local finalValue = formatNumber(accumulatedValue)
-    local finalCombat = formatNumber(accumulatedValue * 10)
-    
-    StatusLabel.Text = string.format(
-        "Status: Stopped\nFinal Stat: %s\nFinal Combat: %s\nCheck character stats!",
-        finalValue,
-        finalCombat
-    )
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
 end
 
--- Button Connections
-StartButton.MouseButton1Click:Connect(startTraining)
-StopButton.MouseButton1Click:Connect(stopTraining)
 
-MinimizeButton.MouseButton1Click:Connect(function()
-    ContentFrame.Visible = not ContentFrame.Visible
-    if ContentFrame.Visible then
-        MainFrame.Size = UDim2.new(0, 420, 0, 420)
-        MinimizeButton.Text = "_"
-    else
-        MainFrame.Size = UDim2.new(0, 420, 0, 40)
-        MinimizeButton.Text = "□"
+
+-- Hotkey F
+game:GetService("UserInputService").InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.F then
+        if running then
+            stopAllThreads()
+        end
+
     end
 end)
 
-CloseButton.MouseButton1Click:Connect(function()
-    stopTraining()
-    ScreenGui:Destroy()
-end)
-
--- Hover effects
-local function addHoverEffect(button, normalColor, hoverColor)
-    button.MouseEnter:Connect(function()
-        button.BackgroundColor3 = hoverColor
-    end)
-    button.MouseLeave:Connect(function()
-        button.BackgroundColor3 = normalColor
-    end)
-end
-
-addHoverEffect(StartButton, Color3.fromRGB(50, 200, 80), Color3.fromRGB(70, 220, 100))
-addHoverEffect(StopButton, Color3.fromRGB(200, 50, 50), Color3.fromRGB(220, 70, 70))
-addHoverEffect(MinimizeButton, Color3.fromRGB(255, 170, 0), Color3.fromRGB(255, 190, 50))
-addHoverEffect(CloseButton, Color3.fromRGB(220, 50, 50), Color3.fromRGB(240, 70, 70))
-
--- Parent to CoreGui
-if gethui then
-    ScreenGui.Parent = gethui()
-elseif syn and syn.protect_gui then
-    syn.protect_gui(ScreenGui)
-    ScreenGui.Parent = game:GetService("CoreGui")
-else
-    ScreenGui.Parent = game:GetService("CoreGui")
-end
-
-print("🔥 Stat Accumulator V3 Loaded!")
-print("📊 NOW ACCUMULATES TO ACTUAL STAT VALUES")
-print("💡 Uses 3 methods:")
-print("  1. StatisticsDataHasChanged (stat injection)")
-print("  2. PlayerTrainValueHasChanged (train value)")
-print("  3. PlayerCombatPowerHasChanged (combat power)")
-print("⚡ Values accumulate over time and persist!")
-print("🎯 Start training in-game first, then START script!")
+-- auto-start (wenn gewünscht)
+startAll()
